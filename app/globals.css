@@ -24,3 +24,13 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+@layer components {
+  .book-lg {
+    @apply font-['Pretendard'] text-[48px] font-extrabold leading-[1.05] tracking-tight whitespace-nowrap;
+  }
+
+  .book-sm {
+    @apply font-serif text-[24px] font-normal tracking-[-0.15em] leading-[1.15] whitespace-normal break-all;
+  }
+}

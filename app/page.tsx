@@ -1,90 +1,236 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import BookItem from "@/components/BookItem";
-import {
-  FONT_VARIANTS,
-  SIZE_VARIANTS,
-  WEIGHT_VARIANTS,
-  ROTATION_VARIANTS,
-} from "@/constants/styles";
+import { BookRow } from "@/components/BookRow";
+import { Book, BookRowData, RowElement, BookStatus } from "@/types/book";
+import { getLen } from "@/utils/bookUtils";
+import { getRandomImg } from "@/constants/assets";
 
-interface Book {
-  id: number;
-  title: string;
-  style: string;
-}
-
-export default function Home() {
-  const [books, setBooks] = useState<Book[]>([]);
+export default function BookshelfPage() {
+  const [rows, setRows] = useState<BookRowData[]>([]); // 배치 끝난 행들
+  const [waitRow, setWaitRow] = useState<BookRowData | null>(null); // 배치 대기 행
   const [inputValue, setInputValue] = useState("");
 
-  const getRandomStyle = () => {
-    const f = FONT_VARIANTS[Math.floor(Math.random() * FONT_VARIANTS.length)];
-    const s = SIZE_VARIANTS[Math.floor(Math.random() * SIZE_VARIANTS.length)];
-    const w =
-      WEIGHT_VARIANTS[Math.floor(Math.random() * WEIGHT_VARIANTS.length)];
-    const r =
-      ROTATION_VARIANTS[Math.floor(Math.random() * ROTATION_VARIANTS.length)];
-    return `${f} ${s} ${w} ${r}`;
-  };
+  // 이미지 요소 생성기
+  const createImgElement = (width: number): RowElement => ({
+    id: `img-${Math.random()}`,
+    type: "DECO",
+    unitLen: width,
+    content: (
+      <img
+        src={getRandomImg(width)}
+        alt=""
+        className="w-full h-12 object-contain block opacity-90"
+      />
+    ),
+  });
 
-  const handleAddBook = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputValue.trim()) return;
+  // 총합이 9 미만이지만 마감해야 할 때
+  const finalizeWaitRow = useCallback((currentRow: BookRowData | null) => {
+    if (!currentRow) return;
 
-    const newBook: Book = {
-      id: Date.now(),
-      title: inputValue,
-      style: getRandomStyle(),
+    let finalElements = [...currentRow.elements];
+    const slashUnit = 1;
+    const neededForImg = 9 - currentRow.totalLen - slashUnit;
+    const side = Math.random() > 0.5 ? "left" : "right";
+    const slashEl: RowElement = {
+      id: `s-${Math.random()}`,
+      type: "DECO",
+      content: "/",
+      unitLen: 1,
     };
 
-    setBooks((prev) => [...prev, newBook]);
+    if (neededForImg > 0) {
+      const imgEl = createImgElement(Math.floor(neededForImg));
+      if (side === "left") finalElements = [imgEl, slashEl, ...finalElements];
+      else finalElements = [...finalElements, slashEl, imgEl];
+    } else if (neededForImg === 0) {
+      if (side === "left") finalElements = [slashEl, ...finalElements];
+      else finalElements = [...finalElements, slashEl];
+    }
+
+    setRows((prev) => [
+      ...prev,
+      {
+        ...currentRow,
+        elements: finalElements,
+        totalLen: 9,
+        align: side,
+      },
+    ]);
+    setWaitRow(null);
+  }, []);
+
+  const handleBookClick = useCallback((bookId: string) => {
+    const updateElements = (elements: RowElement[]): RowElement[] =>
+      elements.map((el) => {
+        if (el.type === "BOOK" && el.bookData?.id === bookId) {
+          const newStatus: BookStatus =
+            el.bookData.status === "DONE" ? "PROGRESS" : "DONE";
+          return {
+            ...el,
+            bookData: { ...el.bookData, status: newStatus },
+          };
+        }
+        return el;
+      });
+
+    setRows((prev) =>
+      prev.map((row) => ({
+        ...row,
+        elements: updateElements(row.elements),
+      }))
+    );
+
+    setWaitRow((prev) =>
+      prev
+        ? {
+            ...prev,
+            elements: updateElements(prev.elements),
+          }
+        : null
+    );
+  }, []);
+
+  // 인풋 통해 책 제목 추가할 때
+  const handleAddBook = (e: React.FormEvent) => {
+    e.preventDefault();
+    const title = inputValue.trim();
+    if (!title) return;
+
+    const len = getLen(title);
+    const newBook: Book = {
+      id: `book-${Date.now()}`,
+      title,
+      status: "PROGRESS",
+      len,
+    };
+
+    if (len > 9) {
+      if (waitRow) finalizeWaitRow(waitRow);
+      setRows((prev) => [
+        ...prev,
+        {
+          id: `row-${Date.now()}`,
+          elements: [
+            {
+              id: `el-${Date.now()}`,
+              type: "BOOK",
+              bookData: newBook,
+              unitLen: 9,
+            },
+          ],
+          styleType: "STYLE2",
+          totalLen: 9,
+          align: Math.random() > 0.5 ? "left" : "right",
+        },
+      ]);
+    } else if (len === 9) {
+      if (waitRow) finalizeWaitRow(waitRow);
+      setRows((prev) => [
+        ...prev,
+        {
+          id: `row-${Date.now()}`,
+          elements: [
+            {
+              id: `el-${Date.now()}`,
+              type: "BOOK",
+              bookData: newBook,
+              unitLen: 9,
+            },
+          ],
+          styleType: "STYLE1",
+          totalLen: 9,
+        },
+      ]);
+    } else {
+      if (!waitRow) {
+        setWaitRow({
+          id: `row-${Date.now()}`,
+          elements: [
+            {
+              id: `el-${Date.now()}`,
+              type: "BOOK",
+              bookData: newBook,
+              unitLen: len,
+            },
+          ],
+          styleType: "STYLE1",
+          totalLen: len,
+        });
+      } else {
+        const slashUnit = 1;
+        const newTotal = waitRow.totalLen + slashUnit + len;
+        if (
+          newTotal > 9 ||
+          waitRow.elements.filter((el) => el.type === "BOOK").length >= 3
+        ) {
+          finalizeWaitRow(waitRow);
+          setWaitRow({
+            id: `row-${Date.now()}`,
+            elements: [
+              {
+                id: `el-${Date.now()}`,
+                type: "BOOK",
+                bookData: newBook,
+                unitLen: len,
+              },
+            ],
+            styleType: "STYLE1",
+            totalLen: len,
+          });
+        } else {
+          setWaitRow((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  elements: [
+                    ...prev.elements,
+                    {
+                      id: `s-${Date.now()}`,
+                      type: "DECO",
+                      content: "/",
+                      unitLen: 1,
+                    },
+                    {
+                      id: `b-${Date.now()}`,
+                      type: "BOOK",
+                      bookData: newBook,
+                      unitLen: len,
+                    },
+                  ],
+                  totalLen: prev.totalLen + slashUnit + len,
+                }
+              : null
+          );
+        }
+      }
+    }
     setInputValue("");
   };
 
-  const handleBookClick = useCallback((id: number) => {
-    console.log(`클릭된 아이템 ID: ${id}`);
-  }, []);
-
   return (
-    <main className="min-h-screen bg-[#FDFCF0] text-black flex flex-col relative overflow-hidden">
-      <div className="flex-1 flex flex-wrap items-center justify-center content-center p-4 pb-32 overflow-y-auto">
-        {books.length === 0 && (
-          <div className="text-center opacity-20 select-none">
-            <p className="text-lg font-serif italic">
-              나만의 서재를 채워보세요
-            </p>
-          </div>
-        )}
-
-        {books.map((book) => (
-          <BookItem
-            key={book.id}
-            id={book.id}
-            title={book.title}
-            styleClassName={book.style}
-            onClick={handleBookClick}
-          />
+    <main className="min-h-screen bg-[#FDFCF0] text-black flex flex-col items-center">
+      <div className="w-91.25 flex-1 flex flex-col overflow-y-auto pb-40 pt-10 scrollbar-hide">
+        {rows.map((row) => (
+          <BookRow key={row.id} rowData={row} onBookClick={handleBookClick} />
         ))}
+        {waitRow && <BookRow rowData={waitRow} onBookClick={handleBookClick} />}
       </div>
 
-      <div className="fixed bottom-0 left-0 w-full p-8 bg-linear-to-t from-[#FDFCF0] via-[#FDFCF0] to-transparent">
+      <div className="fixed bottom-0 w-91.25 p-6 bg-linear-to-t from-[#FDFCF0] via-[#FDFCF0] to-transparent">
         <form
           onSubmit={handleAddBook}
-          className="max-w-md mx-auto flex items-center gap-4 border-b border-black/30 pb-2 focus-within:border-black transition-colors"
+          className="flex gap-2 border-b border-black pb-1"
         >
           <input
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            placeholder="읽은 책의 제목을 입력하세요..."
-            className="flex-1 bg-transparent py-2 focus:outline-none placeholder:text-black/20 font-serif"
+            className="flex-1 bg-transparent py-2 focus:outline-none text-base"
+            placeholder="책 제목을 입력해주세요"
           />
-          <button
-            type="submit"
-            className="text-3xl font-medium tracking-widest hover:opacity-50 transition-opacity"
-          >
+          <button type="submit" className="text-3xl">
             +
           </button>
         </form>
